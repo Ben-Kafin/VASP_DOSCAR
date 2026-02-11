@@ -165,6 +165,7 @@ class DosPlotter:
         plt.show()
 
 if __name__ == "__main__":
-    v_dir = r'C:/Users/Benjamin Kafin/Documents/VASP/SAM/zigzag/kpoints551/dpl_corr/kp551'
+    v_dir = r'C:/dir'
     plotter = DosPlotter(v_dir)
+
     plotter.plot_dos_cursors()
