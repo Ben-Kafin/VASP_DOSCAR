@@ -24,9 +24,9 @@ class DosPlotter:
         self.orbitals = []
         self.atomtypes = []
         self.atomnums = []
-        self.vesta_label_map = {} # Corrected terminology
+        self.vesta_label_map = {} 
         
-        # Hard-coded element colors
+        # Hard-coded VESTA-style element colors
         self._type_color_map = {
             'Au': 'orange',
             'N': 'blue',
@@ -46,15 +46,21 @@ class DosPlotter:
         if len(tokens) < 4: raise ValueError("Header tokens insufficient")
         return int(tokens[2]), float(tokens[3])
 
+    def _get_element_by_index(self, a):
+        curr = 0
+        for idx, count in enumerate(self.atomnums):
+            if a <= curr + count:
+                return self.atomtypes[idx]
+            curr += count
+        return 'grey'
+
     def _parse_doscar(self):
         with open(self.doscar, 'r') as file:
             atomnum = int(file.readline().split()[0])
             for _ in range(4): file.readline()
             nedos, ef = self._extract_ef_and_nedos(file.readline().strip())
             
-            energies_list = []
-            total_dos_list = []
-            site_dos_list = []
+            energies_list, total_dos_list, site_dos_list = [], [], []
             
             for i in range(atomnum + 1):
                 if i != 0: file.readline()
@@ -78,10 +84,9 @@ class DosPlotter:
         mapping = {
             3: ['s', 'p', 'd'],
             6: ['s_up','s_down','p_up','p_down','d_up','d_down'],
-            9: ['s','py','pz','px','dxy','dyz','dz2','dxz','dx2-y2'],
-            16: ['s','py','pz','px','dxy','dyz','dz2','dxz','dx2-y2','fy3x2','fxyz','fyz2','fz3','fxz2','fzx2','fx3'],
-            18: ['s_up','s_down','py_up','py_down','pz_up','pz_down','px_up','px_down','dxy_up','dxy_down','dyz_up','dyz_down','dz2_up','dz2_down','dxz_up','dxz_down','dx2-y2_up','dx2-y2_down'],
-            32: ['s_up','s_down','py_up','py_down','pz_up','pz_down','px_up','px_down','dxy_up','dxy_down','dyz_up','dyz_down','dz2_up','dz2_down','dxz_up','dxz_down','dx2-y2_up','dx2-y2_down','fy3x2_up','fy3x2_down','fxyz_up','fxyz_down','fyz2_up','fyz2_down','fz3_up','fz3_down','fxz2_up','fxz2_down','fzx2_up','fzx2_down','fx3_up','fx3_down']
+            9: ['s', 'py', 'pz', 'px', 'dxy', 'dyz', 'dz2', 'dxz', 'dx2-y2'],
+            18: ['s_up', 's_down', 'py_up', 'py_down', 'pz_up', 'pz_down', 'px_up', 'px_down', 'dxy_up', 'dxy_down', 'dyz_up', 'dyz_down', 'dz2_up', 'dz2_down', 'dxz_up', 'dxz_down', 'dx2-y2_up', 'dx2-y2_down'],
+            32: ['s_up', 's_down', 'py_up', 'py_down', 'pz_up', 'pz_down', 'px_up', 'px_down', 'dxy_up', 'dxy_down', 'dyz_up', 'dyz_down', 'dz2_up', 'dz2_down', 'dxz_up', 'dxz_down', 'dx2-y2_up', 'dx2-y2_down', 'fy3x2_up', 'fy3x2_down', 'fxyz_up', 'fxyz_down', 'fyz2_up', 'fyz2_down', 'fz3_up', 'fz3_down', 'fxz2_up', 'fxz2_down', 'fzx2_up', 'fzx2_down', 'fx3_up', 'fx3_down']
         }
         self.orbitals = mapping.get(num_cols, [])
 
@@ -105,60 +110,99 @@ class DosPlotter:
         h, l, s = colorsys.rgb_to_hls(*c)
         return colorsys.hls_to_rgb(h, min(1, l + amount * (1 - l)), s)
 
-    def plot_dos_cursors(self, nums=None, types=None, orbitals=None, full=False):
+    def plot_dos_cursors(self, nums=None, types=None):
         fig, ax = plt.subplots()
-        data_lines = []
+        atom_sum_lines, atom_orb_lines = {}, {} 
+        self.active_atom, self.orb_cursor = None, None 
         
-        if full:
-            total_sum = np.sum(self.total_dos, axis=1)
-            line, = ax.plot(self.energies, total_sum, color='k', label='total DOS')
-            data_lines.append(line)
-        else:
-            selected_atoms = []
-            counter = 1
-            for idx, t in enumerate(self.atomtypes):
-                for j in range(1, self.atomnums[idx] + 1):
-                    if ((not types) or (t in types)) and ((not nums) or (counter in nums)):
-                        selected_atoms.append(counter)
-                    counter += 1
+        selected_atoms = []
+        counter = 1
+        for idx, t in enumerate(self.atomtypes):
+            for j in range(1, self.atomnums[idx] + 1):
+                if ((not types) or (t in types)) and ((not nums) or (counter in nums)):
+                    selected_atoms.append(counter)
+                counter += 1
 
-            plot_orbitals = orbitals if orbitals else self.orbitals
-            unique_bases = sorted(set(self._orbit_base(o) for o in plot_orbitals))
-            styles = ['-', '--', ':', '-.'] + [(0, (3+i, 2)) for i in range(max(0, len(unique_bases)-4))]
-            linestyle_map = dict(zip(unique_bases, styles))
+        unique_bases = sorted(set(self._orbit_base(o) for o in self.orbitals))
+        styles = ['-', '--', ':', '-.'] + [(0, (3+i, 2)) for i in range(max(0, len(unique_bases)-4))]
+        linestyle_map = dict(zip(unique_bases, styles))
 
-            for a in selected_atoms:
-                global_idx = a
-                curr = 0
-                for idx, count in enumerate(self.atomnums):
-                    if global_idx <= curr + count:
-                        element = self.atomtypes[idx]
-                        break
-                    curr += count
-                
-                base_color = self._type_color_map.get(element, 'grey')
-                vesta_label = self.vesta_label_map[a]
-                
-                for orb in plot_orbitals:
-                    if orb not in self.orbitals: continue
-                    col_idx = self.orbitals.index(orb)
-                    y_vals = self.site_dos[a-1, :, col_idx]
-                    ls = linestyle_map[self._orbit_base(orb)]
-                    plot_color = self._lighten_color(base_color, 0.3) if orb.endswith('_up') else base_color
-                    line, = ax.plot(self.energies, y_vals, color=plot_color, linestyle=ls, label=f"{vesta_label} – {orb}")
-                    data_lines.append(line)
+        BASE_Z, FRONT_Z_ATOM, FRONT_Z_ORB = 2, 10, 11
+
+        for a in selected_atoms:
+            element = self._get_element_by_index(a)
+            base_color = self._type_color_map.get(element, 'grey')
+            
+            y_sum = np.sum(self.site_dos[a-1], axis=1)
+            sum_line, = ax.plot(self.energies, y_sum, color=base_color, lw=2, 
+                                label=self.vesta_label_map[a], picker=True, pickradius=3, zorder=BASE_Z)
+            atom_sum_lines[a] = sum_line
+            
+            orb_list = []
+            for orb in self.orbitals:
+                col_idx = self.orbitals.index(orb)
+                y_orb = self.site_dos[a-1, :, col_idx]
+                ls = linestyle_map[self._orbit_base(orb)]
+                p_color = self._lighten_color(base_color, 0.3) if orb.endswith('_up') else base_color
+                o_line, = ax.plot(self.energies, y_orb, color=p_color, linestyle=ls, 
+                                  lw=1.2, visible=False, label=f"{self.vesta_label_map[a]} – {orb}", 
+                                  zorder=BASE_Z-1)
+                orb_list.append(o_line)
+            atom_orb_lines[a] = orb_list
 
         atom_proxies = [Line2D([0], [0], color=self._type_color_map.get(t, 'grey'), lw=2) for t in self.atomtypes]
-        leg1 = ax.legend(atom_proxies, self.atomtypes, title="Atoms (VESTA-style)", loc='upper right', frameon=False)
-        ax.add_artist(leg1)
-
+        ax.legend(atom_proxies, self.atomtypes, title="Atoms (VESTA-style)", loc='upper right', frameon=False)
         orb_proxies = [Line2D([0], [0], color='black', linestyle=linestyle_map[b], lw=1.5) for b in unique_bases]
-        ax.legend(orb_proxies, unique_bases, title="Orbitals", loc='upper left', frameon=False)
+        ax.legend(orb_proxies, unique_bases, title="Orbitals", loc='upper left', frameon=False).set_zorder(100)
 
-        # Optimized cursor prevents warnings and eliminates lag
-        cursor = mplcursors.cursor(data_lines, hover=True)
-        cursor.connect("add", lambda sel: sel.annotation.set_text(sel.artist.get_label()))
-        
+        def update_plot_visuals():
+            if self.orb_cursor:
+                self.orb_cursor.remove()
+                self.orb_cursor = None
+
+            # User-adjustable desaturation factor (0 = grey, 1 = full color)
+            S = 0.25 
+
+            if self.active_atom is None:
+                for a, line in atom_sum_lines.items():
+                    element = self._get_element_by_index(a)
+                    line.set_color(self._type_color_map.get(element, 'grey'))
+                    line.set_alpha(1.0)
+                    line.set_zorder(BASE_Z)
+                    for o_line in atom_orb_lines[a]: o_line.set_visible(False)
+            else:
+                for a, line in atom_sum_lines.items():
+                    element = self._get_element_by_index(a)
+                    orig_color = mc.to_rgb(self._type_color_map.get(element, 'grey'))
+                    
+                    if a == self.active_atom:
+                        line.set_color(orig_color)
+                        line.set_alpha(1.0)
+                        line.set_zorder(FRONT_Z_ATOM)
+                        active_orbs = atom_orb_lines[a]
+                        for o_line in active_orbs:
+                            o_line.set_visible(True)
+                            o_line.set_zorder(FRONT_Z_ORB)
+                        self.orb_cursor = mplcursors.cursor(active_orbs, hover=True)
+                        self.orb_cursor.connect("add", lambda sel: sel.annotation.set_text(sel.artist.get_label()))
+                    else:
+                        # Partial Desaturation Logic [cite: 2026-02-11]
+                        lumi = 0.299*orig_color[0] + 0.587*orig_color[1] + 0.114*orig_color[2]
+                        new_rgb = (S * np.array(orig_color)) + ((1 - S) * lumi)
+                        
+                        line.set_color(new_rgb)
+                        line.set_alpha(0.05) 
+                        line.set_zorder(BASE_Z)
+                        for o_line in atom_orb_lines[a]: o_line.set_visible(False)
+            fig.canvas.draw_idle()
+
+        def on_pick(event):
+            clicked_idx = next((a for a, line in atom_sum_lines.items() if line == event.artist), None)
+            if clicked_idx is None: return
+            self.active_atom = None if self.active_atom == clicked_idx else clicked_idx
+            update_plot_visuals()
+
+        fig.canvas.mpl_connect('pick_event', on_pick)
         ax.set_xlabel('energy – $E_f$ / eV')
         ax.set_ylabel('DOS / states eV⁻¹')
         plt.tight_layout()
@@ -167,5 +211,4 @@ class DosPlotter:
 if __name__ == "__main__":
     v_dir = r'C:/dir'
     plotter = DosPlotter(v_dir)
-
     plotter.plot_dos_cursors()
