@@ -97,7 +97,7 @@ class DosPlotter:
             self.atomnums = [int(i) for i in lines[6].split()]
 
     def _parse_all(self):
-        self._parse_all_data = self._parse_doscar()
+        self._parse_doscar()
         self._parse_poscar()
         current_global = 1
         for idx, t in enumerate(self.atomtypes):
@@ -150,8 +150,12 @@ class DosPlotter:
                 orb_list.append(o_line)
             atom_orb_lines[a] = orb_list
 
+        # LEGEND 1: Atom Colors [cite: 2026-02-04]
         atom_proxies = [Line2D([0], [0], color=self._type_color_map.get(t, 'grey'), lw=2) for t in self.atomtypes]
-        ax.legend(atom_proxies, self.atomtypes, title="Atoms (VESTA-style)", loc='upper right', frameon=False)
+        leg1 = ax.legend(atom_proxies, self.atomtypes, title="Atoms (VESTA-style)", loc='upper right', frameon=False)
+        ax.add_artist(leg1) # Locks the first legend onto the plot [cite: 2026-02-04]
+
+        # LEGEND 2: Orbital Styles
         orb_proxies = [Line2D([0], [0], color='black', linestyle=linestyle_map[b], lw=1.5) for b in unique_bases]
         ax.legend(orb_proxies, unique_bases, title="Orbitals", loc='upper left', frameon=False).set_zorder(100)
 
@@ -183,6 +187,7 @@ class DosPlotter:
                         for o_line in active_orbs:
                             o_line.set_visible(True)
                             o_line.set_zorder(FRONT_Z_ORB)
+                        # Decoupled Hover Engine [cite: 2026-02-11]
                         self.orb_cursor = mplcursors.cursor(active_orbs, hover=True)
                         self.orb_cursor.connect("add", lambda sel: sel.annotation.set_text(sel.artist.get_label()))
                     else:
@@ -203,12 +208,7 @@ class DosPlotter:
         def on_click(event):
             """Reset state if background (axes) is clicked with no pick event."""
             if event.inaxes != ax: return
-            # Matplotlib pick events are processed before button_press_events in many backends.
-            # If no line was picked (indicated by active_atom not changing in on_pick), we reset.
-            # However, to be safe, we check if the event.artist exists; if not, it's a background click.
-            # We also ensure the click isn't a zoom/pan tool interaction.
             if fig.canvas.manager.toolbar.mode == "" and event.dblclick is False:
-                # We reset only if the click didn't land on a 'picker' artist handled by on_pick
                 is_pick = any(line.contains(event)[0] for line in atom_sum_lines.values())
                 if not is_pick:
                     self.active_atom = None
