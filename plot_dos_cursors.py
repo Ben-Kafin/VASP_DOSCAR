@@ -97,7 +97,7 @@ class DosPlotter:
             self.atomnums = [int(i) for i in lines[6].split()]
 
     def _parse_all(self):
-        self._parse_doscar()
+        self._parse_all_data = self._parse_doscar()
         self._parse_poscar()
         current_global = 1
         for idx, t in enumerate(self.atomtypes):
@@ -160,7 +160,7 @@ class DosPlotter:
                 self.orb_cursor.remove()
                 self.orb_cursor = None
 
-            # User-adjustable desaturation factor (0 = grey, 1 = full color)
+            # Partial Desaturation Logic [cite: 2026-02-11]
             S = 0.25 
 
             if self.active_atom is None:
@@ -186,10 +186,8 @@ class DosPlotter:
                         self.orb_cursor = mplcursors.cursor(active_orbs, hover=True)
                         self.orb_cursor.connect("add", lambda sel: sel.annotation.set_text(sel.artist.get_label()))
                     else:
-                        # Partial Desaturation Logic [cite: 2026-02-11]
                         lumi = 0.299*orig_color[0] + 0.587*orig_color[1] + 0.114*orig_color[2]
                         new_rgb = (S * np.array(orig_color)) + ((1 - S) * lumi)
-                        
                         line.set_color(new_rgb)
                         line.set_alpha(0.05) 
                         line.set_zorder(BASE_Z)
@@ -202,7 +200,23 @@ class DosPlotter:
             self.active_atom = None if self.active_atom == clicked_idx else clicked_idx
             update_plot_visuals()
 
+        def on_click(event):
+            """Reset state if background (axes) is clicked with no pick event."""
+            if event.inaxes != ax: return
+            # Matplotlib pick events are processed before button_press_events in many backends.
+            # If no line was picked (indicated by active_atom not changing in on_pick), we reset.
+            # However, to be safe, we check if the event.artist exists; if not, it's a background click.
+            # We also ensure the click isn't a zoom/pan tool interaction.
+            if fig.canvas.manager.toolbar.mode == "" and event.dblclick is False:
+                # We reset only if the click didn't land on a 'picker' artist handled by on_pick
+                is_pick = any(line.contains(event)[0] for line in atom_sum_lines.values())
+                if not is_pick:
+                    self.active_atom = None
+                    update_plot_visuals()
+
         fig.canvas.mpl_connect('pick_event', on_pick)
+        fig.canvas.mpl_connect('button_press_event', on_click)
+        
         ax.set_xlabel('energy – $E_f$ / eV')
         ax.set_ylabel('DOS / states eV⁻¹')
         plt.tight_layout()
