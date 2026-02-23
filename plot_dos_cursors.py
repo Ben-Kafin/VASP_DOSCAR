@@ -152,7 +152,7 @@ class DosPlotter:
 
         # LEGEND 1: Atom Colors [cite: 2026-02-04]
         atom_proxies = [Line2D([0], [0], color=self._type_color_map.get(t, 'grey'), lw=2) for t in self.atomtypes]
-        leg1 = ax.legend(atom_proxies, self.atomtypes, title="Atoms (VESTA-style)", loc='upper right', frameon=False)
+        leg1 = ax.legend(atom_proxies, self.atomtypes, title="Atom Types", loc='upper right', frameon=False)
         ax.add_artist(leg1) # Locks the first legend onto the plot [cite: 2026-02-04]
 
         # LEGEND 2: Orbital Styles
@@ -226,3 +226,4 @@ if __name__ == "__main__":
     v_dir = r'C:/dir'
     plotter = DosPlotter(v_dir)
     plotter.plot_dos_cursors()
+
